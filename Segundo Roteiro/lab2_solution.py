@@ -9,28 +9,22 @@ import warnings
 warnings.filterwarnings('ignore')
 from pathlib import Path
 
-# Caminhos relativos ao diretório onde o script está localizado
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / 'data'
 IMG_DIR  = BASE_DIR / 'images'
 
-# ============================================================
-# CONFIGURAÇÕES GERAIS
-# ============================================================
 plt.rcParams.update({'font.size': 10, 'figure.dpi': 120})
-T = 0.1  # Período de amostragem
+T = 0.1 
 np.random.seed(42)
 
 # ============================================================
 # QUESTÃO 1 — Sistemas contínuos e discretização
 # ============================================================
 
-# a) Ga(s) = (0.5s^2 + 2s + 2) / (s^3 + 3s^2 + 4s + 2)
 num_a = [0.5, 2, 2]
 den_a = [1, 3, 4, 2]
 Ga = control.tf(num_a, den_a)
 
-# b) Gb(s) = 2.5 / (s^2 + s + 2.5)
 num_b = [2.5]
 den_b = [1, 1, 2.5]
 Gb = control.tf(num_b, den_b)
@@ -43,7 +37,6 @@ print("Polos de Ga:", control.poles(Ga))
 print("\nGb(s) =", Gb)
 print("Polos de Gb:", control.poles(Gb))
 
-# Discretização ZOH
 Ga_d = control.sample_system(Ga, T, method='zoh')
 Gb_d = control.sample_system(Gb, T, method='zoh')
 
@@ -55,11 +48,10 @@ print("\n--- Gb(z) [ZOH, T=0.1s] ---")
 print(Gb_d)
 print("Polos de Gb_d:", control.poles(Gb_d))
 
-# Extrair coeficientes para equação a diferenças
 def tf_to_difference_eq(G_d, name):
     num = np.array(G_d.num[0][0])
     den = np.array(G_d.den[0][0])
-    # Normalizar pelo coeficiente líder do denominador
+
     num = num / den[0]
     den = den / den[0]
     print(f"\nEquação a diferenças de {name}:")
@@ -72,7 +64,6 @@ def tf_to_difference_eq(G_d, name):
 num_ad, den_ad = tf_to_difference_eq(Ga_d, "Ga(z)")
 num_bd, den_bd = tf_to_difference_eq(Gb_d, "Gb(z)")
 
-# Simulação degrau
 t_cont = np.linspace(0, 10, 1000)
 t_disc = np.arange(0, 10, T)
 u_step = np.ones_like(t_cont)
@@ -81,7 +72,6 @@ u_step_d = np.ones(len(t_disc))
 t_a, y_a = control.step_response(Ga, T=t_cont)
 t_b, y_b = control.step_response(Gb, T=t_cont)
 
-# Simular discreto via convolução (lsim)
 t_ad, y_ad = control.forced_response(Ga_d, T=t_disc, U=u_step_d)
 t_bd, y_bd = control.forced_response(Gb_d, T=t_disc, U=u_step_d)
 
@@ -113,7 +103,7 @@ print("QUESTÃO 2 — MÍNIMOS QUADRADOS")
 print("=" * 60)
 
 def simulate_difference_eq(num, den, u_input):
-    """Simula equação a diferenças y(k) = -sum(den[i+1]*y(k-i-1)) + sum(num[j]*u(k-j))"""
+    
     N = len(u_input)
     y = np.zeros(N)
     na = len(den) - 1
@@ -128,14 +118,12 @@ def simulate_difference_eq(num, den, u_input):
     return y
 
 N = 100
-# Entrada degrau
 u_step100 = np.ones(N)
-# Entrada uniforme [-1,1] média zero
 u_unif = np.random.uniform(-1, 1, N)
-u_unif -= u_unif.mean()  # garantir média zero
+u_unif -= u_unif.mean()
 
 def build_regressor(y, u, na, nb):
-    """Constrói matriz de regressores Phi para ARX de ordem (na, nb)"""
+
     N = len(y)
     n_params = na + nb + 1
     Phi = np.zeros((N, n_params))
@@ -149,7 +137,7 @@ def build_regressor(y, u, na, nb):
     return Phi
 
 def least_squares(Phi, y):
-    """Estimador de Mínimos Quadrados: theta = (Phi'*Phi)^{-1} * Phi' * y"""
+
     return np.linalg.lstsq(Phi, y, rcond=None)[0]
 
 def compute_residuals(y, Phi, theta):
@@ -157,8 +145,6 @@ def compute_residuals(y, Phi, theta):
     return y - y_hat
 
 def emq_analysis(num_d, den_d, sys_name):
-    """Executa análise EMQ para um sistema dado"""
-    # Gerar dados com entrada degrau e uniforme
     y_step = simulate_difference_eq(num_d, den_d, u_step100)
     y_unif = simulate_difference_eq(num_d, den_d, u_unif)
 
@@ -168,11 +154,11 @@ def emq_analysis(num_d, den_d, sys_name):
     results = {}
     for order in range(1, 6):
         na = order; nb = order
-        # Degrau
+
         Phi_s = build_regressor(y_step, u_step100, na, nb)
         theta_s = least_squares(Phi_s, y_step)
         res_s = compute_residuals(y_step, Phi_s, theta_s)
-        # Uniforme
+
         Phi_u = build_regressor(y_unif, u_unif, na, nb)
         theta_u = least_squares(Phi_u, y_unif)
         res_u = compute_residuals(y_unif, Phi_u, theta_u)
@@ -209,9 +195,7 @@ res_a, y_step_a, y_unif_a = emq_analysis(num_ad, den_ad, "Sistema a")
 print("\n--- Sistema b ---")
 res_b, y_step_b, y_unif_b = emq_analysis(num_bd, den_bd, "Sistema b")
 
-# --- Parte com Ruído: 100 identificações de ordem 3 ---
 def noise_analysis(num_d, den_d, y_clean_step, y_clean_unif, u_s, u_u, sys_name):
-    """100 identificações com ruído dinâmico e de sensor"""
     na = nb = 3
     n_runs = 100
     sigma = 0.05
@@ -222,9 +206,7 @@ def noise_analysis(num_d, den_d, y_clean_step, y_clean_unif, u_s, u_u, sys_name)
     for _ in range(n_runs):
         e_dyn_s = np.random.normal(0, sigma, N)
         e_sen_s = np.random.normal(0, sigma, N)
-        # Ruído dinâmico: adicionado a cada passo
         y_dyn_s = simulate_difference_eq(num_d, den_d, u_s) + e_dyn_s
-        # Ruído sensor: adicionado ao vetor inteiro
         y_sen_s = y_clean_step + e_sen_s
 
         Phi_d = build_regressor(y_dyn_s, u_s, na, nb)
@@ -290,7 +272,6 @@ print("QUESTÃO 3 — VALIDAÇÃO")
 print("=" * 60)
 
 def validate_model(y_val, u_val, theta, na, nb, name=""):
-    """Validação: SQE, R2, SNR"""
     Phi_val = build_regressor(y_val, u_val, na, nb)
     y_hat = Phi_val @ theta
     res = y_val - y_hat
@@ -301,7 +282,6 @@ def validate_model(y_val, u_val, theta, na, nb, name=""):
     mse = sse / len(y_val)
     return mse, r2, snr
 
-# Validação com nova entrada aleatória
 N_val = 100
 u_val = np.random.uniform(-1, 1, N_val)
 u_val -= u_val.mean()
@@ -331,7 +311,6 @@ for order in range(1, 6):
 # ============================================================
 
 def arx_identify(u, y, na, nb):
-    """ARX: A(z)y = B(z)u"""
     N = len(y)
     n_params = na + nb
     Phi = np.zeros((N, n_params))
@@ -348,7 +327,6 @@ def arx_identify(u, y, na, nb):
     return theta, mse, y_hat
 
 def armax_identify(u, y, na, nb, nc, max_iter=20, tol=1e-6):
-    """ARMAX: A(z)y = B(z)u + C(z)e — via iteração de mínimos quadrados"""
     N = len(y)
     n_params = na + nb + nc
     e = np.zeros(N)
@@ -374,7 +352,6 @@ def armax_identify(u, y, na, nb, nc, max_iter=20, tol=1e-6):
     return theta, mse, y_hat
 
 def mse_validation(u_val, y_val, theta, na, nb, nc=0, model='arx'):
-    """Calcula MSE de validação dado um modelo estimado"""
     N = len(y_val)
     e = np.zeros(N)
     Phi = np.zeros((N, na + nb + nc))
@@ -394,7 +371,6 @@ def mse_validation(u_val, y_val, theta, na, nb, nc=0, model='arx'):
     return np.mean(e ** 2)
 
 def split_data(data, frac=0.6):
-    """Divide dados em estimação e validação"""
     n = int(len(data) * frac)
     return data[:n], data[n:]
 
@@ -406,7 +382,6 @@ print("QUESTÃO 4 — IDENTIFICAÇÃO dados_1 e dados_2")
 print("=" * 60)
 
 def identify_dataset(data, ds_name, q_label="Q4"):
-    """Testa ARX e ARMAX de ordens 1-5, retorna tabela de MSE"""
     u_all = data[:, 0]
     y_all = data[:, 1]
     n_est = int(0.6 * len(u_all))
@@ -424,7 +399,6 @@ def identify_dataset(data, ds_name, q_label="Q4"):
 
     for order in range(1, 6):
         na = nb = nc = order
-        # ARX
         theta_arx, mse_est_arx, _ = arx_identify(u_e, y_e, na, nb)
         mse_val_arx = mse_validation(u_v, y_v, theta_arx, na, nb, 0, 'arx')
         row_arx = (f"{'ARX':>12} {order:>6} {mse_est_arx:>12.6f} {mse_val_arx:>12.6f}")
@@ -436,7 +410,6 @@ def identify_dataset(data, ds_name, q_label="Q4"):
             best_mse_val = mse_val_arx
             best_model = table_rows[-1]
 
-        # ARMAX
         theta_armax, mse_est_armax, _ = armax_identify(u_e, y_e, na, nb, nc)
         mse_val_armax = mse_validation(u_v, y_v, theta_armax, na, nb, nc, 'armax')
         row_armax = (f"{'ARMAX':>12} {order:>6} {mse_est_armax:>12.6f} {mse_val_armax:>12.6f}")
@@ -451,12 +424,10 @@ def identify_dataset(data, ds_name, q_label="Q4"):
     print(f"\n  *** Melhor modelo: {best_model['model']} ordem {best_model['order']} "
           f"| MSE_val={best_model['mse_val']:.6f}")
 
-    # Gráfico comparativo para o melhor modelo
     fig, axes = plt.subplots(2, 1, figsize=(13, 8))
     fig.suptitle(f"{q_label} — {ds_name} — Melhor: {best_model['model']} ordem {best_model['order']}",
                  fontweight='bold')
 
-    # Estimação
     bm = best_model
     if bm['model'] == 'ARX':
         _, _, y_hat_e = arx_identify(u_e, y_e, bm['na'], bm['nb'])
@@ -468,7 +439,6 @@ def identify_dataset(data, ds_name, q_label="Q4"):
     axes[0].set_title("Conjunto de Estimação")
     axes[0].legend(); axes[0].grid(True, alpha=0.3); axes[0].set_ylabel("Saída")
 
-    # Validação
     N_v = len(y_v)
     y_hat_v = np.zeros(N_v)
     e_v = np.zeros(N_v)
@@ -512,14 +482,11 @@ print("QUESTÃO 5 — IDENTIFICAÇÃO dados_3 e dados_4 (parâmetros no tempo)")
 print("=" * 60)
 
 def identify_dataset_q5(data, ds_name):
-    """Como Q4 mas também plota evolução dos parâmetros no tempo (janela deslizante)"""
     u_all = data[:, 0]
     y_all = data[:, 1]
 
-    # Identificação completa
     table_rows, best = identify_dataset(data, ds_name, "Q5")
 
-    # Análise temporal dos parâmetros com janela deslizante
     best_na = best['na']; best_nb = best['nb']; best_nc = best['nc']
     win = 80
     step_w = 5
@@ -584,7 +551,6 @@ print("QUESTÃO 6 — IDENTIFICAÇÃO dados_5 e dados_6 (AIC/BIC + EMQR)")
 print("=" * 60)
 
 def aic_bic(mse, n_params, N):
-    """AIC e BIC"""
     sse = mse * N
     if sse <= 0:
         sse = 1e-10
@@ -593,7 +559,6 @@ def aic_bic(mse, n_params, N):
     return aic, bic
 
 def recursive_ls_extended(u, y, na, nb, nc, lam=0.98):
-    """Mínimos Quadrados Recursivo Estendido (EMQR) com fator de esquecimento lambda"""
     N = len(y)
     n_params = na + nb + nc
     theta = np.zeros(n_params)
@@ -614,7 +579,6 @@ def recursive_ls_extended(u, y, na, nb, nc, lam=0.98):
         e = y[k] - y_hat
         e_hist[k] = e
 
-        # Ganho de Kalman
         Pphi = P @ phi
         denom = lam + phi @ Pphi
         K = Pphi / denom
@@ -649,7 +613,6 @@ def identify_q6(data, ds_name):
 
     for order in range(1, 6):
         na = nb = nc = order
-        # ARX
         theta_arx, mse_arx, _ = arx_identify(u_e, y_e, na, nb)
         n_p_arx = na + nb
         aic_arx, bic_arx = aic_bic(mse_arx, n_p_arx, N_e)
@@ -660,7 +623,6 @@ def identify_q6(data, ds_name):
                          'aic':aic_arx,'bic':bic_arx,'mse_est':mse_arx,'mse_val':mse_v_arx,
                          'theta':theta_arx})
 
-        # ARMAX com EMQR
         theta_hist, mse_emqr, e_emqr, y_hat_emqr = recursive_ls_extended(u_e, y_e, na, nb, nc)
         theta_emqr = theta_hist[-1]
         n_p_armax = na + nb + nc
@@ -684,8 +646,6 @@ def identify_q6(data, ds_name):
     print(f"\n  *** Melhor por AIC: {best_aic_model['model']} ordem {best_aic_model['order']} (AIC={best_aic:.2f})")
     print(f"  *** Melhor por BIC: {best_bic_model['model']} ordem {best_bic_model['order']} (BIC={best_bic:.2f})")
 
-    # Gráfico dos parâmetros EMQR ao longo do tempo para o melhor modelo
-    # Pega o ARMAX com menor AIC
     best_armax = next((r for r in all_rows if r['model']=='ARMAX' and r['order']==best_aic_model['order']), all_rows[-1])
 
     fig, axes = plt.subplots(2, 1, figsize=(13, 9))
@@ -700,7 +660,6 @@ def identify_q6(data, ds_name):
         axes[0].set_xlabel("Amostras"); axes[0].set_ylabel("Parâmetro")
         axes[0].legend(ncol=3, fontsize=8); axes[0].grid(True, alpha=0.3)
 
-    # Saída estimada vs medida
     if 'e_hist' in best_armax:
         y_hat_b = y_e - best_armax['e_hist']
         axes[1].plot(y_e, 'b-', alpha=0.7, label='y medido')
